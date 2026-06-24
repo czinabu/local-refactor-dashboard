@@ -15,7 +15,7 @@ A simple web app that uses AI to refactor code for better readability, efficienc
 ## 📦 Installation
 1. Clone the repository:
    ```bash
-   git clone https://github.com/czinabu/my-code-refactorer.git
+   git clone https://github.com/czinabu/local-refactor-dashboard.git
    ```
 2. Install dependencies:
    ```bash
