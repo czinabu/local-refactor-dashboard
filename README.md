@@ -21,10 +21,35 @@ A simple web app that uses AI to refactor code for better readability, efficienc
    ```bash
    pip install -r requirements.txt
    ```
-3. Run the app:
+3. Configure Ollama (optional). Copy `.env.example` to `.env` and set `OLLAMA_BASE_URL` if Ollama
+   isn't on `http://localhost:11434` (for example, another machine on your Tailscale network), and
+   `OLLAMA_MODEL` to change the model (default `qwen3:14b`).
+4. Run the app:
    ```bash
-   uvicorn src.main:app --reload
+   uvicorn refactor_dashboard.main:app --reload
    ```
+   Then open http://localhost:8000.
+
+## 🗂️ Project layout
+```
+refactor_dashboard/
+  main.py        # app factory and entry point
+  config.py      # settings (env vars / .env)
+  routes.py      # "/" page and POST /refactor
+  ollama.py      # Ollama API client
+  prompts.py     # prompt building and output cleanup
+  schemas.py     # request models
+  templates/     # index.html
+  static/        # style.css, app.js
+tests/
+```
+
+## 🧪 Development
+```bash
+pip install -r requirements-dev.txt
+ruff check . && ruff format --check .
+pytest
+```
 
 ## 📝 License
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
