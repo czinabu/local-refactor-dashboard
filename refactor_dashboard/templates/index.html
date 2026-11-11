@@ -2,35 +2,89 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Local AI Refactor Dashboard</title>
+    <link rel="stylesheet" href="/static/vendor/hljs-github-dark.min.css">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="container">
-        <h1>🧠 Local AI Code Refactorer</h1>
-        <p>Paste code below and click "Refactor". Powered by Qwen 3 on your Desktop.</p>
+        <header>
+            <h1>🧠 Local AI Code Refactorer</h1>
+            <p class="subtitle">Paste code, pick a model and a goal, and watch the refactor stream in from your local Ollama.</p>
+        </header>
 
-        <textarea id="codeInput" placeholder="Paste your code here..."></textarea>
+        <section class="panel">
+            <textarea id="codeInput" spellcheck="false" placeholder="Paste your code here..."></textarea>
 
-        <div class="controls">
-            Language:
-            <select id="langInput">
-                <option value="python">Python</option>
-                <option value="javascript">JavaScript</option>
-                <option value="typescript">TypeScript</option>
-                <option value="go">Go</option>
-                <option value="rust">Rust</option>
-            </select>
-            Instruction:
-            <input type="text" id="instrInput" value="Refactor for readability and efficiency.">
-        </div>
+            <div class="controls">
+                <label>
+                    <span>Language</span>
+                    <select id="langInput">
+                        <option value="python">Python</option>
+                        <option value="javascript">JavaScript</option>
+                        <option value="typescript">TypeScript</option>
+                        <option value="go">Go</option>
+                        <option value="rust">Rust</option>
+                        <option value="java">Java</option>
+                        <option value="csharp">C#</option>
+                        <option value="cpp">C++</option>
+                        <option value="c">C</option>
+                        <option value="ruby">Ruby</option>
+                        <option value="php">PHP</option>
+                        <option value="kotlin">Kotlin</option>
+                        <option value="swift">Swift</option>
+                        <option value="sql">SQL</option>
+                        <option value="bash">Shell</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Model</span>
+                    <select id="modelInput"></select>
+                    <button id="reloadModels" class="icon" type="button" title="Reload installed models" aria-label="Reload installed models">↻</button>
+                </label>
+                <span id="modelStatus" class="hint"></span>
+            </div>
 
-        <button id="refactorButton" type="button">Refactor Code</button>
+            <div class="controls">
+                <span class="label">Goal</span>
+                <div id="presetGroup" class="chips" role="group" aria-label="Instruction preset"></div>
+            </div>
+            <textarea id="customInstruction" class="instruction" rows="2" hidden
+                      placeholder="Describe how the code should be refactored, e.g. &quot;Convert callbacks to async/await&quot;"></textarea>
 
-        <h2>Output:</h2>
-        <pre id="output"><em>Result will appear here...</em></pre>
+            <div class="actions">
+                <button id="refactorButton" type="button">Refactor Code</button>
+                <button id="stopButton" type="button" class="secondary" hidden>Stop</button>
+                <span class="hint">Ctrl/⌘ + Enter</span>
+                <span id="status" class="status" role="status"></span>
+                <span id="stats" class="stats"></span>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="output-header">
+                <div class="tabs" role="tablist">
+                    <button type="button" role="tab" data-tab="live" aria-controls="liveOutput" aria-selected="true">Output</button>
+                    <button type="button" role="tab" data-tab="diff" aria-controls="diffView" aria-selected="false" disabled>Diff</button>
+                    <button type="button" role="tab" data-tab="code" aria-controls="codeView" aria-selected="false" disabled>Refactored</button>
+                </div>
+                <button id="copyButton" type="button" class="secondary" disabled>Copy refactored code</button>
+            </div>
+
+            <details id="thinking" class="thinking" hidden>
+                <summary>Model reasoning</summary>
+                <pre id="thinkingText"></pre>
+            </details>
+
+            <pre id="liveOutput" class="output" role="tabpanel"><em>Result will appear here...</em></pre>
+            <div id="diffView" class="diff-wrap" role="tabpanel" hidden></div>
+            <pre id="codeView" class="output" role="tabpanel" hidden><code class="hljs"></code></pre>
+        </section>
     </div>
 
+    <script src="/static/vendor/diff-5.2.0.min.js"></script>
+    <script src="/static/vendor/highlight-11.9.0.min.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>
