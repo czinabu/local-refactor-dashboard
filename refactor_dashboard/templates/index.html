@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Local AI Refactor Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 Local AI Code Refactorer</h1>
+        <p>Paste code below and click "Refactor". Powered by Qwen 3 on your Desktop.</p>
+
+        <textarea id="codeInput" placeholder="Paste your code here..."></textarea>
+
+        <div class="controls">
+            Language:
+            <select id="langInput">
+                <option value="python">Python</option>
+                <option value="javascript">JavaScript</option>
+                <option value="typescript">TypeScript</option>
+                <option value="go">Go</option>
+                <option value="rust">Rust</option>
+            </select>
+            Instruction:
+            <input type="text" id="instrInput" value="Refactor for readability and efficiency.">
+        </div>
+
+        <button id="refactorButton" type="button">Refactor Code</button>
+
+        <h2>Output:</h2>
+        <pre id="output"><em>Result will appear here...</em></pre>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
