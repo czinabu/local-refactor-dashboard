@@ -11,11 +11,18 @@
     <div class="container">
         <header>
             <h1>🧠 Local AI Code Refactorer</h1>
-            <p class="subtitle">Paste code, pick a model and a goal, and watch the refactor stream in from your local Ollama.</p>
+            <p class="subtitle">Paste or open a file, pick a model and a goal, and watch the refactor stream in from your local Ollama.</p>
         </header>
 
         <section class="panel">
-            <textarea id="codeInput" spellcheck="false" placeholder="Paste your code here..."></textarea>
+            <div class="file-bar">
+                <button id="openFileButton" type="button" class="secondary">Open file…</button>
+                <input id="fileInput" type="file" hidden>
+                <span id="fileName" class="file-name" hidden></span>
+                <button id="clearFile" class="icon" type="button" title="Forget file name" aria-label="Forget file name" hidden>×</button>
+                <span class="hint">or drop a file on the editor</span>
+            </div>
+            <textarea id="codeInput" spellcheck="false" placeholder="Paste your code here, or drop a file..."></textarea>
 
             <div class="controls">
                 <label>
@@ -69,8 +76,16 @@
                     <button type="button" role="tab" data-tab="diff" aria-controls="diffView" aria-selected="false" disabled>Diff</button>
                     <button type="button" role="tab" data-tab="code" aria-controls="codeView" aria-selected="false" disabled>Refactored</button>
                 </div>
-                <button id="copyButton" type="button" class="secondary" disabled>Copy refactored code</button>
+                <div class="output-actions">
+                    <button id="copyButton" type="button" class="secondary" disabled>Copy refactored code</button>
+                    <button id="downloadButton" type="button" class="secondary" disabled>Download</button>
+                </div>
             </div>
+
+            <section id="summary" class="summary" aria-labelledby="summaryTitle" hidden>
+                <h2 id="summaryTitle">What changed</h2>
+                <div id="summaryText"></div>
+            </section>
 
             <details id="thinking" class="thinking" hidden>
                 <summary>Model reasoning</summary>
@@ -80,6 +95,15 @@
             <pre id="liveOutput" class="output" role="tabpanel"><em>Result will appear here...</em></pre>
             <div id="diffView" class="diff-wrap" role="tabpanel" hidden></div>
             <pre id="codeView" class="output" role="tabpanel" hidden><code class="hljs"></code></pre>
+        </section>
+
+        <section class="panel" aria-labelledby="historyTitle">
+            <div class="history-header">
+                <h2 id="historyTitle">History</h2>
+                <span id="historyHint" class="hint">Past refactors are saved on this machine.</span>
+                <button id="clearHistory" type="button" class="secondary small">Clear all</button>
+            </div>
+            <ul id="historyList" class="history"></ul>
         </section>
     </div>
 
