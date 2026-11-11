@@ -18,6 +18,10 @@ Paste in some code, pick a language, say what you want, and a large language mod
 - **Live streaming.** Watch the refactor appear as the model writes it, with token count and speed. Reasoning from thinking models (like qwen3) is tucked into a collapsible section, and you can stop a run at any time.
 - **Side-by-side diff.** Original and refactored code next to each other with line numbers, change highlighting and syntax highlighting, plus a one-click copy button.
 - **Model picker.** Choose from the models installed in your Ollama; your choice is remembered.
+- **"What changed" summary.** Every refactor comes with a short list of what the model changed and why.
+- **Open, drop and download files.** Open a file or drag it onto the page (the language is detected from the extension), then download the result with the same name.
+- **Local history.** Past refactors are saved to a small SQLite database on your machine. Browse, reopen or delete them from the History panel.
+- **Command-line tool.** `refactor app.py --diff` refactors a file straight from your terminal or editor, sharing the same presets and history.
 - **Instruction presets.** Simplify, Optimize performance, Add types/docs, or write a Custom instruction.
 - **Language aware.** Python, JavaScript, TypeScript, Go, Rust, Java, C#, C/C++, Ruby, PHP, Kotlin, Swift, SQL and shell.
 - **Clean output.** Strips the model's reasoning and markdown fences so you get code you can paste straight back in.
@@ -64,7 +68,9 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 On macOS, Docker can't use the Apple GPU, so for speed run Ollama natively and use the local setup below.
 
-**Stopping.** `docker compose down` stops everything. Add `-v` to also delete the downloaded models.
+Refactor history is kept in the `app-data` volume, so it survives restarts and rebuilds.
+
+**Stopping.** `docker compose down` stops everything. Add `-v` to also delete the downloaded models and your history.
 
 ## Local setup (without Docker)
 
@@ -77,14 +83,31 @@ On macOS, Docker can't use the Apple GPU, so for speed run Ollama natively and u
    git clone https://github.com/czinabu/local-refactor-dashboard.git
    cd local-refactor-dashboard
    python -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
+   pip install -e .
    ```
+   This installs the dependencies and the `refactor` command. (`pip install -r requirements.txt` also works if you only want the web app.)
 3. Configure (optional). Copy `.env.example` to `.env` and adjust the values below.
 4. Run the app:
    ```bash
    uvicorn refactor_dashboard.main:app --reload
    ```
    Then open **http://localhost:8000**.
+
+## Command-line tool
+
+`pip install -e .` adds a `refactor` command (or run `python -m refactor_dashboard` without installing). It talks to Ollama directly, so the web app doesn't need to be running.
+
+```bash
+refactor app.py                          # print the refactored code and a summary of changes
+refactor app.py -p simplify --diff       # use a preset and show a unified diff
+refactor app.py -i "Add type hints" -w   # overwrite the file in place
+refactor app.py -o app_clean.py -m qwen2.5-coder:7b
+cat snippet.js | refactor - -l javascript
+refactor --history 10                    # list recent refactors
+refactor --show 42                       # print a past refactor
+```
+
+Presets are `simplify`, `optimize` and `types_docs`. Add `--no-history` to skip saving a run, and `-q` to hide the summary. Using the Docker setup? The bundled Ollama is published on port 11434, so the CLI on your host works against it with the default settings.
 
 ## Configuration
 
@@ -95,6 +118,8 @@ Settings are read from environment variables or a `.env` file in the directory y
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL, without a path. Use a LAN or Tailscale IP for a remote GPU box. |
 | `OLLAMA_MODEL`    | `qwen3:14b`              | Model used for refactoring. Must be pulled in Ollama first.                 |
 | `OLLAMA_TIMEOUT`  | `60`                     | Seconds to wait for the model to respond (Docker Compose uses `120`). When streaming, the longest allowed gap between tokens. |
+| `DATA_DIR`        | `~/.local-refactor-dashboard` | Folder for local data (the `history.db` SQLite file). Docker uses `/data` on a volume. |
+| `HISTORY_ENABLED` | `true`                   | Set to `false` to stop saving refactors to history.                         |
 
 Docker Compose also reads `APP_PORT` (default `8000`) and `OLLAMA_PORT` (default `11434`) to change the published ports.
 
@@ -124,11 +149,14 @@ The UI is a thin client over a small JSON API, so you can script it too:
 | Method & path | What it does |
 | --- | --- |
 | `POST /refactor` | Refactor and return the code as one JSON response |
-| `POST /refactor/stream` | Same request, streamed as NDJSON events: `start`, `thinking`, `token`, then `done` (with `code`, `raw` and `stats`) or `error` |
+| `POST /refactor/stream` | Same request, streamed as NDJSON events: `start`, `thinking`, `token`, then `done` (with `code`, `summary`, `raw`, `stats` and `history_id`) or `error` |
 | `GET /api/models` | Installed Ollama models, the configured default, and an `error` if Ollama is unreachable |
 | `GET /api/presets` | Instruction presets |
+| `GET /api/history` | Recent refactors (`limit`, `offset`) |
+| `GET /api/history/{id}` | One past refactor, with its original and refactored code |
+| `DELETE /api/history/{id}` | Delete one entry (`DELETE /api/history` clears it all) |
 
-Both refactor endpoints take `code` and `language`, plus optional `model`, `preset` (`simplify`, `optimize`, `types_docs`) and `instruction` (a non-empty instruction overrides the preset):
+Both refactor endpoints take `code` and `language`, plus optional `model`, `preset` (`simplify`, `optimize`, `types_docs`) and `instruction` (a non-empty instruction overrides the preset), `filename`, and `save_history` (default `true`). Responses include the code, a `summary` of what changed and the `history_id`:
 
 ```bash
 curl -s http://localhost:8000/refactor \
@@ -137,7 +165,7 @@ curl -s http://localhost:8000/refactor \
 ```
 
 ```json
-{"status": "success", "code": "def square_evens(numbers: list[int]) -> list[int]:\n    ..."}
+{"status": "success", "code": "def square_evens(numbers: list[int]) -> list[int]:\n    ...", "summary": "- Renamed f to square_evens ...", "history_id": 7}
 ```
 
 Interactive API docs are at **http://localhost:8000/docs**.
@@ -147,10 +175,13 @@ Interactive API docs are at **http://localhost:8000/docs**.
 ```
 refactor_dashboard/
   main.py        # app factory and entry point
+  cli.py         # `refactor` command-line tool (also `python -m refactor_dashboard`)
   config.py      # settings (env vars / .env)
   routes.py      # "/" page and the API
   ollama.py      # Ollama API client (generate, streaming, installed models)
   presets.py     # instruction presets
+  history.py     # SQLite refactor history
+  languages.py   # supported languages and file-extension detection
   prompts.py     # prompt building and output cleanup
   schemas.py     # request models
   templates/     # index.html
