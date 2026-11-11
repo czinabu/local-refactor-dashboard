@@ -1,4 +1,5 @@
-// Refactor dashboard: model picker, instruction presets, streamed output and side-by-side diff.
+// Refactor dashboard: file open/drop, model picker, instruction presets, streamed output,
+// side-by-side diff, change summary and local history.
 (() => {
     "use strict";
 
@@ -21,8 +22,27 @@
         diff: $("diffView"),
         codeView: $("codeView"),
         copy: $("copyButton"),
+        download: $("downloadButton"),
         tabs: document.querySelectorAll("[role=tab]"),
+        openFile: $("openFileButton"),
+        fileInput: $("fileInput"),
+        fileName: $("fileName"),
+        clearFile: $("clearFile"),
+        summary: $("summary"),
+        summaryText: $("summaryText"),
+        historyList: $("historyList"),
+        historyHint: $("historyHint"),
+        clearHistory: $("clearHistory"),
     };
+
+    // File extension -> language value in the Language picker.
+    const EXTENSIONS = {
+        py: "python", js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "javascript",
+        ts: "typescript", tsx: "typescript", go: "go", rs: "rust", java: "java", kt: "kotlin",
+        c: "c", h: "c", cpp: "cpp", cc: "cpp", hpp: "cpp", cs: "csharp", rb: "ruby", php: "php",
+        swift: "swift", sh: "bash", bash: "bash", sql: "sql",
+    };
+    const MAX_FILE_BYTES = 512 * 1024;
 
     const state = {
         preset: null,
@@ -30,6 +50,9 @@
         original: "",
         language: "",
         finalCode: "",
+        summary: "",
+        filename: null, // name of the opened file, sent along and kept in history
+        historyId: null, // history entry currently shown
     };
 
     // ---------- models & presets ----------
@@ -137,6 +160,7 @@
                     model: els.model.value || null,
                     preset: state.preset,
                     instruction: custom ? els.custom.value : null,
+                    filename: state.filename,
                 }),
                 signal: state.controller.signal,
             });
@@ -203,9 +227,12 @@
             }
             case "done":
                 state.finalCode = evt.code;
+                state.summary = evt.summary || "";
+                state.historyId = evt.history_id ?? null;
                 showStats(evt.stats);
                 setStatus("Done.", "ok");
                 showResult();
+                if (state.historyId !== null) loadHistory();
                 break;
             case "error":
                 setStatus("Error: " + evt.message, "error");
@@ -233,6 +260,12 @@
         els.diff.innerHTML = "";
         els.codeView.firstElementChild.innerHTML = "";
         els.copy.disabled = true;
+        els.download.disabled = true;
+        els.summary.hidden = true;
+        els.summaryText.innerHTML = "";
+        state.summary = "";
+        state.historyId = null;
+        markActiveHistory();
         setTabEnabled("diff", false);
         setTabEnabled("code", false);
         showTab("live");
@@ -242,6 +275,9 @@
         els.diff.appendChild(renderSideBySide(state.original, state.finalCode, state.language));
         els.codeView.firstElementChild.innerHTML = highlight(state.finalCode, state.language);
         els.copy.disabled = !state.finalCode;
+        els.download.disabled = !state.finalCode;
+        showSummary(state.summary);
+        markActiveHistory();
         setTabEnabled("diff", true);
         setTabEnabled("code", true);
         showTab("diff");
@@ -277,6 +313,202 @@
         const label = els.copy.textContent;
         els.copy.textContent = "Copied ✓";
         setTimeout(() => (els.copy.textContent = label), 1500);
+    }
+
+    function downloadResult() {
+        const name = state.filename || `refactored.${extensionFor(state.language)}`;
+        const blob = new Blob([state.finalCode.replace(/\n*$/, "\n")], { type: "text/plain" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    function extensionFor(language) {
+        return Object.keys(EXTENSIONS).find((ext) => EXTENSIONS[ext] === language) || "txt";
+    }
+
+    // ---------- "what changed" summary ----------
+
+    function showSummary(text) {
+        els.summaryText.innerHTML = text ? renderSummary(text) : "";
+        els.summary.hidden = !text;
+    }
+
+    /** Tiny markdown subset for the model's summary: bullet/numbered lists, `code`, **bold**. */
+    function renderSummary(text) {
+        const inline = (s) =>
+            escapeHtml(s)
+                .replace(/`([^`]+)`/g, "<code>$1</code>")
+                .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        let html = "";
+        let inList = false;
+        for (const raw of text.split("\n")) {
+            const line = raw.trim();
+            if (!line) continue;
+            const item = line.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/);
+            if (item) {
+                if (!inList) html += "<ul>";
+                inList = true;
+                html += `<li>${inline(item[1])}</li>`;
+            } else {
+                if (inList) html += "</ul>";
+                inList = false;
+                html += `<p>${inline(line)}</p>`;
+            }
+        }
+        return html + (inList ? "</ul>" : "");
+    }
+
+    // ---------- opening files ----------
+
+    async function openFile(file) {
+        if (!file) return;
+        if (file.size > MAX_FILE_BYTES) {
+            setStatus(`${file.name} is too large (max ${MAX_FILE_BYTES / 1024} KB).`, "error");
+            return;
+        }
+        let text;
+        try {
+            text = await file.text();
+        } catch (e) {
+            setStatus(`Could not read ${file.name}: ${e.message}`, "error");
+            return;
+        }
+        if (text.includes("\u0000")) {
+            setStatus(`${file.name} looks like a binary file.`, "error");
+            return;
+        }
+        els.code.value = text;
+        setFilename(file.name);
+        const ext = file.name.includes(".") ? file.name.split(".").pop().toLowerCase() : "";
+        const lang = EXTENSIONS[ext];
+        if (lang && [...els.lang.options].some((o) => o.value === lang)) els.lang.value = lang;
+        setStatus(`Opened ${file.name}.`);
+    }
+
+    function setFilename(name) {
+        state.filename = name || null;
+        els.fileName.textContent = name || "";
+        els.fileName.hidden = !name;
+        els.clearFile.hidden = !name;
+    }
+
+    // ---------- history ----------
+
+    async function loadHistory() {
+        let data;
+        try {
+            const res = await fetch("/api/history?limit=100");
+            data = await res.json();
+        } catch (e) {
+            els.historyHint.textContent = "Could not load history: " + e.message;
+            return;
+        }
+        els.historyList.innerHTML = "";
+        els.clearHistory.hidden = !data.enabled || !data.items.length;
+        if (!data.enabled) {
+            els.historyHint.textContent = "History is turned off (HISTORY_ENABLED=false).";
+            return;
+        }
+        els.historyHint.textContent = "Past refactors are saved on this machine.";
+        if (!data.items.length) {
+            const li = document.createElement("li");
+            li.className = "empty";
+            li.textContent = "No refactors yet. Finished runs from here and from the refactor CLI show up here.";
+            els.historyList.appendChild(li);
+            return;
+        }
+        for (const item of data.items) els.historyList.appendChild(historyRow(item));
+        markActiveHistory();
+    }
+
+    function historyRow(item) {
+        const li = document.createElement("li");
+        li.dataset.id = item.id;
+
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "history-open";
+        const name = item.filename ? item.filename.split(/[\\/]/).pop() : `Pasted ${item.language}`;
+        const when = new Date(item.created_at).toLocaleString();
+        const via = item.source === "cli" ? " · CLI" : "";
+        open.innerHTML =
+            `<span class="history-title">${escapeHtml(name)} — ${escapeHtml(item.instruction)}</span>` +
+            `<span class="history-meta">${escapeHtml(when)} · ${escapeHtml(item.model || "")}${via}</span>`;
+        open.title = item.summary || item.instruction;
+        open.addEventListener("click", () => openHistory(item.id));
+
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "history-delete";
+        del.textContent = "×";
+        del.title = "Delete from history";
+        del.setAttribute("aria-label", `Delete ${name} from history`);
+        del.addEventListener("click", () => deleteHistory(item.id));
+
+        li.append(open, del);
+        return li;
+    }
+
+    async function openHistory(id) {
+        if (state.controller) return;
+        let entry;
+        try {
+            const res = await fetch(`/api/history/${id}`);
+            if (!res.ok) throw new Error(await errorMessage(res));
+            entry = await res.json();
+        } catch (e) {
+            setStatus("Could not open refactor: " + e.message, "error");
+            return;
+        }
+        els.code.value = entry.original_code;
+        if ([...els.lang.options].some((o) => o.value === entry.language)) els.lang.value = entry.language;
+        setFilename(entry.filename ? entry.filename.split(/[\\/]/).pop() : null);
+
+        resetOutput();
+        state.original = entry.original_code;
+        state.language = entry.language;
+        state.finalCode = entry.refactored_code;
+        state.summary = entry.summary;
+        state.historyId = entry.id;
+        els.live.textContent = entry.refactored_code;
+        showResult();
+        setStatus(`Showing refactor from ${new Date(entry.created_at).toLocaleString()}.`);
+        els.summary.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    async function deleteHistory(id) {
+        try {
+            const res = await fetch(`/api/history/${id}`, { method: "DELETE" });
+            if (!res.ok && res.status !== 404) throw new Error(await errorMessage(res));
+        } catch (e) {
+            setStatus("Could not delete: " + e.message, "error");
+            return;
+        }
+        if (state.historyId === id) state.historyId = null;
+        loadHistory();
+    }
+
+    async function clearAllHistory() {
+        if (!window.confirm("Delete all saved refactors from this machine?")) return;
+        try {
+            await fetch("/api/history", { method: "DELETE" });
+        } catch (e) {
+            setStatus("Could not clear history: " + e.message, "error");
+            return;
+        }
+        state.historyId = null;
+        loadHistory();
+    }
+
+    function markActiveHistory() {
+        for (const li of els.historyList.children) {
+            li.classList.toggle("active", li.dataset.id !== undefined && Number(li.dataset.id) === state.historyId);
+        }
     }
 
     // ---------- side-by-side diff ----------
@@ -403,6 +635,26 @@
     els.run.addEventListener("click", refactor);
     els.stop.addEventListener("click", () => state.controller && state.controller.abort());
     els.copy.addEventListener("click", copyResult);
+    els.download.addEventListener("click", downloadResult);
+    els.openFile.addEventListener("click", () => els.fileInput.click());
+    els.fileInput.addEventListener("change", () => {
+        openFile(els.fileInput.files[0]);
+        els.fileInput.value = ""; // allow re-opening the same file
+    });
+    els.clearFile.addEventListener("click", () => setFilename(null));
+    els.code.addEventListener("dragover", (e) => {
+        if (![...e.dataTransfer.types].includes("Files")) return;
+        e.preventDefault();
+        els.code.classList.add("dragover");
+    });
+    els.code.addEventListener("dragleave", () => els.code.classList.remove("dragover"));
+    els.code.addEventListener("drop", (e) => {
+        els.code.classList.remove("dragover");
+        if (!e.dataTransfer.files.length) return;
+        e.preventDefault();
+        openFile(e.dataTransfer.files[0]);
+    });
+    els.clearHistory.addEventListener("click", clearAllHistory);
     els.reloadModels.addEventListener("click", loadModels);
     els.model.addEventListener("change", () => storageSet("model", els.model.value));
     for (const t of els.tabs) t.addEventListener("click", () => showTab(t.dataset.tab));
@@ -414,4 +666,5 @@
 
     loadModels();
     loadPresets();
+    loadHistory();
 })();

@@ -27,7 +27,8 @@ Input code:
 {fence}
 
 Refactor the code according to the task.
-Return ONLY the complete refactored code in a single fenced code block. Do not add explanations before or after it.
+Return the complete refactored code in a single fenced code block, with nothing before it.
+After the code block, write "Summary:" followed by 2 to 5 short bullet points saying what you changed and why.
 """
 
 
@@ -42,14 +43,29 @@ def extract_code(text: str) -> str:
     Drops inline reasoning, then takes the longest fenced block (models sometimes
     add a short usage example). Falls back to the whole text when there is no fence.
     """
+    return split_code_and_summary(text)[0]
+
+
+_SUMMARY_HEADING = re.compile(r"^\s*(?:#+\s*)?\**\s*summary\s*\**\s*:?\s*\**\s*", re.IGNORECASE)
+
+
+def split_code_and_summary(text: str) -> tuple[str, str]:
+    """Split a model response into ``(code, summary)``.
+
+    The code is the longest fenced block (see ``extract_code``). The summary is the prose
+    after that block, minus a leading "Summary:" heading; it is empty when the model
+    didn't write one.
+    """
     text = strip_thinking(text).strip()
-    blocks = [m.group(2) for m in _CODE_BLOCK.finditer(text)]
+    blocks = list(_CODE_BLOCK.finditer(text))
     if blocks:
-        return max(blocks, key=len).strip()
+        best = max(blocks, key=lambda m: len(m.group(2)))
+        summary = _SUMMARY_HEADING.sub("", text[best.end() :].strip(), count=1).strip()
+        return best.group(2).strip(), summary
     # An unterminated fence (e.g. generation cut off): drop the opening line.
     if text.startswith("```"):
-        return text.split("\n", 1)[1].strip() if "\n" in text else ""
-    return text
+        return (text.split("\n", 1)[1].strip() if "\n" in text else ""), ""
+    return text, ""
 
 
 class ThinkSplitter:

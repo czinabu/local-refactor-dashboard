@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from refactor_dashboard.config import Settings
+from refactor_dashboard.history import HistoryStore, get_history_store
 from refactor_dashboard.main import create_app
 from refactor_dashboard.ollama import OllamaClient, get_ollama_client
 
@@ -61,7 +62,13 @@ def ollama_tags():
 
 
 @pytest.fixture
-def client(settings, ollama_calls, ollama_reply, ollama_stream, ollama_tags):
+def history(tmp_path):
+    """A history store in a temp dir, so tests never touch ~/.local-refactor-dashboard."""
+    return HistoryStore(tmp_path / "history.db")
+
+
+@pytest.fixture
+def client(settings, ollama_calls, ollama_reply, ollama_stream, ollama_tags, history):
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/tags":
             ollama_calls.append((str(request.url), None))
@@ -77,5 +84,6 @@ def client(settings, ollama_calls, ollama_reply, ollama_stream, ollama_tags):
     fake = OllamaClient(settings, transport=httpx.MockTransport(handler))
     app = create_app()
     app.dependency_overrides[get_ollama_client] = lambda: fake
+    app.dependency_overrides[get_history_store] = lambda: history
     with TestClient(app) as c:
         yield c

@@ -7,7 +7,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 #
 # Settings come from your shell or a .env file next to this file
-# (OLLAMA_MODEL, OLLAMA_TIMEOUT, APP_PORT, OLLAMA_PORT).
+# (OLLAMA_MODEL, OLLAMA_TIMEOUT, HISTORY_ENABLED, APP_PORT, OLLAMA_PORT).
 
 services:
   ollama:
@@ -49,6 +49,12 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:14b}
       OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-120}
+      DATA_DIR: /data
+      HISTORY_ENABLED: ${HISTORY_ENABLED:-true}
+    volumes:
+      # Refactor history (SQLite), kept across container rebuilds.
+      - app-data:/data
 
 volumes:
   ollama:
+  app-data:

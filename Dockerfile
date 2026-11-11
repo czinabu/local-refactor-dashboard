@@ -14,9 +14,12 @@ RUN pip install -r requirements.txt
 
 COPY refactor_dashboard ./refactor_dashboard
 
-# Run as an unprivileged user.
-RUN useradd --create-home --uid 1000 appuser
+# Run as an unprivileged user. /data holds the refactor history (mount a volume there).
+RUN useradd --create-home --uid 1000 appuser \
+    && mkdir /data && chown appuser:appuser /data
 USER appuser
+ENV DATA_DIR=/data
+VOLUME ["/data"]
 
 EXPOSE 8000
 

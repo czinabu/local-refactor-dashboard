@@ -2,9 +2,7 @@
 
 from pydantic import BaseModel, Field
 
-DEFAULT_INSTRUCTION = (
-    "Refactor this code to be cleaner, more efficient, and add comments. Output only the code."
-)
+DEFAULT_INSTRUCTION = "Refactor this code to be cleaner, more efficient, and add comments."
 
 
 class RefactorRequest(BaseModel):
@@ -16,3 +14,7 @@ class RefactorRequest(BaseModel):
     preset: str | None = None
     # Ollama model name; defaults to the configured OLLAMA_MODEL.
     model: str | None = None
+    # Name of the uploaded file, if any; kept in the history.
+    filename: str | None = Field(default=None, max_length=255)
+    # Set to false to skip saving this run to the local history.
+    save_history: bool = True
