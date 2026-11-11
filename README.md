@@ -3,9 +3,12 @@
 A simple web app that uses AI to refactor code for better readability, efficiency, and maintainability. Built with FastAPI, Ollama, and Python.
 
 ## 🚀 Features
-- Refactor code using AI (powered by Qwen3)
-- Simple and clean UI
-- Works locally with minimal setup
+- Refactor code using a local model through Ollama (Qwen3 by default)
+- Output streams in as the model writes it, with the model's reasoning tucked into a collapsible section
+- Side-by-side diff of original vs refactored code with syntax highlighting, plus a one-click copy button
+- Model picker that lists the models installed in your Ollama (remembers your choice)
+- Instruction presets: Simplify, Optimize performance, Add types/docs, or a Custom instruction
+- Works fully offline: front-end libraries are bundled in `static/vendor/`
 
 ## 🛠️ Technologies Used
 - [FastAPI](https://fastapi.tiangolo.com/)
@@ -35,14 +38,26 @@ A simple web app that uses AI to refactor code for better readability, efficienc
 refactor_dashboard/
   main.py        # app factory and entry point
   config.py      # settings (env vars / .env)
-  routes.py      # "/" page and POST /refactor
-  ollama.py      # Ollama API client
+  routes.py      # "/" page and the API below
+  ollama.py      # Ollama API client (generate, streaming, installed models)
+  presets.py     # instruction presets
   prompts.py     # prompt building and output cleanup
   schemas.py     # request models
   templates/     # index.html
-  static/        # style.css, app.js
+  static/        # style.css, app.js, vendor/ (jsdiff, highlight.js)
 tests/
 ```
+
+## 🔌 API
+| Method & path | What it does |
+| --- | --- |
+| `GET /api/models` | Installed Ollama models, the configured default, and an `error` if Ollama is unreachable |
+| `GET /api/presets` | Instruction presets and the default preset |
+| `POST /refactor/stream` | Streams the refactor as NDJSON events: `start`, `thinking`, `token`, then `done` (with the extracted `code`, `raw` text and `stats`) or `error` |
+| `POST /refactor` | Same request, non-streaming JSON response |
+
+Request body for both refactor endpoints: `{"code": "...", "language": "python", "model": "qwen3:14b", "preset": "simplify", "instruction": null}`.
+`model`, `preset` and `instruction` are optional; a non-empty `instruction` overrides the preset.
 
 ## 🧪 Development
 ```bash

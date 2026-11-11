@@ -27,10 +27,51 @@ def ollama_reply():
 
 
 @pytest.fixture
-def client(settings, ollama_calls, ollama_reply):
-    def handler(request: httpx.Request) -> httpx.Response:
+def ollama_stream():
+    """Mutable (status_code, chunks) the fake Ollama streams back as NDJSON for stream=True requests."""
+    return {
+        "status": 200,
+        "chunks": [
+            {"response": "```python\n", "done": False},
+            {"response": "print('hi')\n", "done": False},
+            {"response": "```", "done": False},
+            {
+                "response": "",
+                "done": True,
+                "eval_count": 12,
+                "eval_duration": 2_000_000_000,
+                "total_duration": 3_500_000_000,
+            },
+        ],
+    }
 
-        ollama_calls.append((str(request.url), json.loads(request.content)))
+
+@pytest.fixture
+def ollama_tags():
+    """Mutable (status_code, json body) the fake Ollama answers GET /api/tags with."""
+    return {
+        "status": 200,
+        "body": {
+            "models": [
+                {"name": "test-model", "size": 1, "details": {"parameter_size": "7B", "family": "qwen"}},
+                {"name": "another:3b", "size": 2, "details": {"parameter_size": "3B"}},
+            ]
+        },
+    }
+
+
+@pytest.fixture
+def client(settings, ollama_calls, ollama_reply, ollama_stream, ollama_tags):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/tags":
+            ollama_calls.append((str(request.url), None))
+            return httpx.Response(ollama_tags["status"], json=ollama_tags["body"])
+
+        body = json.loads(request.content)
+        ollama_calls.append((str(request.url), body))
+        if body.get("stream"):
+            ndjson = "".join(json.dumps(c) + "\n" for c in ollama_stream["chunks"])
+            return httpx.Response(ollama_stream["status"], content=ndjson.encode())
         return httpx.Response(ollama_reply["status"], json=ollama_reply["body"])
 
     fake = OllamaClient(settings, transport=httpx.MockTransport(handler))
