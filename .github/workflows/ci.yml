@@ -22,3 +22,17 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet
+      - run: docker compose -f docker-compose.yml -f docker-compose.gpu.yml config --quiet
+      - run: docker build -t local-refactor-dashboard .
+      - name: Smoke test the image
+        run: |
+          docker run -d --name app -p 8000:8000 local-refactor-dashboard
+          for i in $(seq 1 20); do curl -fsS http://localhost:8000/ > /dev/null && exit 0; sleep 1; done
+          docker logs app
+          exit 1
