@@ -1,3 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-refactor-dashboard"
+description = "Local AI code refactoring dashboard and CLI backed by Ollama"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dynamic = ["version"]
+dependencies = ["fastapi", "uvicorn", "httpx", "pydantic", "pydantic-settings", "jinja2"]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+refactor = "refactor_dashboard.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "refactor_dashboard.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["refactor_dashboard*"]
+
+[tool.setuptools.package-data]
+refactor_dashboard = ["templates/*", "static/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
