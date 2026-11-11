@@ -16,7 +16,7 @@ def test_refactor_success(client, ollama_calls):
         "/refactor", json={"code": "print( 'hi' )", "language": "python", "instruction": "tidy"}
     )
     assert response.status_code == 200
-    assert response.json() == {"status": "success", "code": "print('hi')"}
+    assert response.json() == {"status": "success", "code": "print('hi')", "summary": "", "history_id": 1}
 
     url, body = ollama_calls[0]
     assert url == "http://ollama.test:11434/api/generate"

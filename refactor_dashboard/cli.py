@@ -3,6 +3,7 @@
 Examples:
     refactor myfile.py
     refactor myfile.py -i "add type hints" --write
+    refactor myfile.py -p optimize
     refactor myfile.py --diff
     refactor --history
     refactor --show 12
@@ -19,6 +20,7 @@ from .config import get_settings
 from .history import HistoryStore
 from .languages import detect_language
 from .ollama import OllamaClient
+from .presets import PRESETS_BY_ID, resolve_instruction
 from .prompts import build_refactor_prompt, split_code_and_summary
 from .schemas import DEFAULT_INSTRUCTION
 
@@ -29,7 +31,13 @@ def _parser() -> argparse.ArgumentParser:
         description="Refactor a source file with your local Ollama model.",
     )
     p.add_argument("file", nargs="?", help="file to refactor (use - for stdin)")
-    p.add_argument("-i", "--instruction", default=DEFAULT_INSTRUCTION, help="what to change")
+    p.add_argument("-i", "--instruction", help="what to change, in your own words")
+    p.add_argument(
+        "-p",
+        "--preset",
+        choices=[k for k, v in PRESETS_BY_ID.items() if v.instruction],
+        help="use one of the dashboard's goals instead of -i",
+    )
     p.add_argument("-l", "--language", help="language name (guessed from the file extension by default)")
     p.add_argument("-m", "--model", help="Ollama model (defaults to OLLAMA_MODEL)")
     out = p.add_mutually_exclusive_group()
@@ -42,6 +50,18 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--show", type=int, metavar="ID", help="print a past refactor's code and summary")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
+
+
+async def _generate(client: OllamaClient, prompt: str, model: str | None, progress: bool) -> str:
+    """Stream the answer so long refactors don't hit the request timeout; returns the full text."""
+    parts: list[str] = []
+    async for chunk in client.stream_generate(prompt, model=model):
+        parts.append(chunk.get("response", ""))
+        if progress:
+            print(".", end="", file=sys.stderr, flush=True)
+    if progress:
+        print(file=sys.stderr)
+    return "".join(parts)
 
 
 def _print_history(store: HistoryStore, limit: int) -> int:
@@ -88,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.write and filename is None:
         print("refactor: --write needs a file, not stdin", file=sys.stderr)
         return 1
+    instruction = resolve_instruction(args.preset, args.instruction, DEFAULT_INSTRUCTION)
     language = args.language or detect_language(filename or "", default="python")
 
     if not args.quiet:
@@ -96,9 +117,10 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
     try:
+        prompt = build_refactor_prompt(original, language, instruction)
         raw = asyncio.run(
-            OllamaClient(settings).generate(
-                build_refactor_prompt(original, language, args.instruction), model=args.model
+            _generate(
+                OllamaClient(settings), prompt, args.model, progress=not args.quiet and sys.stderr.isatty()
             )
         )
     except Exception as e:  # OllamaError, connection refused, timeouts
@@ -111,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
             source="cli",
             filename=str(Path(args.file).resolve()) if filename else None,
             language=language,
-            instruction=args.instruction,
+            instruction=instruction,
             model=args.model or settings.ollama_model,
             original_code=original,
             refactored_code=code,

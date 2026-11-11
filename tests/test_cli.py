@@ -12,12 +12,14 @@ def cli_env(tmp_path, monkeypatch):
     settings = Settings(_env_file=None, data_dir=tmp_path / "data", ollama_model="test-model")
     prompts = []
 
-    async def fake_generate(self, prompt, model=None):
+    async def fake_stream(self, prompt, model=None):
         prompts.append((prompt, model))
-        return REPLY
+        for piece in (REPLY[:10], REPLY[10:]):
+            yield {"response": piece, "done": False}
+        yield {"response": "", "done": True}
 
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
-    monkeypatch.setattr(cli.OllamaClient, "generate", fake_generate)
+    monkeypatch.setattr(cli.OllamaClient, "stream_generate", fake_stream)
     src = tmp_path / "thing.py"
     src.write_text("x=1\n")
     return settings, src, prompts
@@ -74,7 +76,16 @@ def test_ollama_failure(cli_env, monkeypatch, capsys):
 
     async def boom(self, prompt, model=None):
         raise ConnectionError("connection refused")
+        yield  # pragma: no cover - makes this an async generator
 
-    monkeypatch.setattr(cli.OllamaClient, "generate", boom)
+    monkeypatch.setattr(cli.OllamaClient, "stream_generate", boom)
     assert cli.main([str(src)]) == 1
     assert "connection refused" in capsys.readouterr().err
+
+
+def test_preset(cli_env):
+    from refactor_dashboard.presets import PRESETS_BY_ID
+
+    _, src, prompts = cli_env
+    assert cli.main([str(src), "-p", "optimize", "-q"]) == 0
+    assert PRESETS_BY_ID["optimize"].instruction in prompts[0][0]
