@@ -1,0 +1,54 @@
+# Starts the dashboard together with an Ollama server.
+#
+#   docker compose up -d                 # app on http://localhost:8000
+#   docker compose logs -f ollama-pull   # watch the first model download
+#
+# With an NVIDIA GPU, add the GPU override:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# Settings come from your shell or a .env file next to this file
+# (OLLAMA_MODEL, OLLAMA_TIMEOUT, APP_PORT, OLLAMA_PORT).
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # One-shot job: downloads the model into the shared volume, then exits.
+  # Re-running is cheap once the model is cached.
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-qwen3:14b}"]
+    restart: "no"
+
+  app:
+    build: .
+    image: local-refactor-dashboard:latest
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:14b}
+      OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-120}
+
+volumes:
+  ollama:
